@@ -44,8 +44,8 @@ import string
 from operator import *
 import StringIO
 from Tkinter import *
-import Image
-import ImageTk
+import PIL.Image as Image
+import PIL.ImageTk as ImageTk
 
 # Machine Readable Document types
 DOC_UNDEF= {
@@ -996,13 +996,14 @@ Help= rfidiot.help
 Nogui= rfidiot.nogui
 DEBUG= rfidiot.rfidiotglobals.Debug
 
-myver= 'mrpkey v0.1t'
+myver= 'mrpkey v0.1u'
 passport.info(myver)
 
 TEST= False
 FILES= False
 bruteforce= False
 bruteforceno= False
+bruteforcereset= False
 Jmrtd= False
 JmrtdLock= False
 MRZ=True
@@ -1013,7 +1014,7 @@ UNSETBAC=False
 def help():
 	print
 	print 'Usage:'
-	print '\t' + sys.argv[0] + ' [OPTIONS] <MRZ (Lower)|PLAIN|CHECK|[PATH]> [WRITE|WRITELOCK]'
+	print '\t' + sys.argv[0] + ' [OPTIONS] <MRZ (Lower)|PLAIN|CHECK|[PATH]> [WRITE|WRITELOCK|SLOWBRUTE]'
 	print
 	print '\tSpecify the Lower MRZ as a quoted string or the word TEST to use sample data.'
 	print '\tLower MRZ can be full line or shortened to the essentials: chars 1-9;14-19;22-27'
@@ -1028,6 +1029,7 @@ def help():
 	print '\tSpecify \'?\' for check digits if not known and they will be calculated.'
 	print '\tSpecify \'?\' in the passport number field for bruteforce of that portion.'
 	print '\tNote: only one contiguous portion of the field may be bruteforced.'
+	print '\tSpecify the option SLOWBRUTE after MRZ to force reset between attempts (required on some new passports)'
 	print '\tPadding character \'<\' should be used for unknown fields.'
 	print
         os._exit(True)
@@ -1037,20 +1039,20 @@ if len(args) == 0 or Help:
 
 arg0= args[0].upper()
 
-if not(len(arg0) == 44 or len(arg0) == 21 or arg0 == 'TEST' or arg0 == 'CHECK' or arg0 == 'PLAIN' or arg0 == 'SETBAC' or arg0 == 'UNSETBAC' or os.access(arg0,os.F_OK)) or len(args) > 2:
+if not(len(arg0) == 44 or len(arg0) == 21 or arg0 == 'TEST' or arg0 == 'CHECK' or arg0 == 'PLAIN' or arg0 == 'SETBAC' or arg0 == 'UNSETBAC' or os.access(args[0],os.F_OK)) or len(args) > 2:
 	help()
 
 if len(args) == 2:
         arg1= args[1].upper()
-        if not (arg1 == 'WRITE' or arg1 == 'WRITELOCK'):
+        if not (arg1 == 'WRITE' or arg1 == 'WRITELOCK' or arg1 == 'SLOWBRUTE'):
                 help()
 
 print
 
 # check if we are reading from files
-if os.access(arg0,os.F_OK):
+if os.access(args[0],os.F_OK):
 	FILES= True
-	filespath= arg0
+	filespath= args[0]
 	if not filespath[len(filespath) - 1] == '/':
 		filespath += '/'
 	try:
@@ -1071,6 +1073,9 @@ if arg0 == 'PLAIN' or len(arg0) == 44 or len(arg0) == 21 or FILES:
 			Jmrtd= True
 			JmrtdLock= True
 
+if len(args) == 2 and arg1 == "SLOWBRUTE":
+        bruteforcereset = True
+
 if arg0 == 'TEST':
 	TEST= True
 
@@ -1083,7 +1088,7 @@ if arg0 == 'UNSETBAC':
 	UNSETBAC= True
 
 if arg0 == 'CHECK':
-	while not passport.hsselect('08'):
+	while not passport.hsselect('08', 'A') and not passport.hsselect('08', 'B'):
 		print 'Waiting for passport... (%s)' % passport.errorcode
 	if passport.iso_7816_select_file(passport.AID_MRTD,passport.ISO_7816_SELECT_BY_NAME,'0C'):
 		print 'Device is a Machine Readable Document'
@@ -1112,7 +1117,13 @@ if not FILES and not TEST:
 	# 02 = 212 kBaud
 	# 04 = 414 kBaud
 	# 08 = 818 kBaud
-	while not passport.hsselect('08'):
+	while 42:
+                cardtype='A'
+                if passport.hsselect('08', cardtype):
+                        break
+                cardtype='B'
+                if passport.hsselect('08', cardtype):
+                        break
 		print 'Waiting for passport... (%s)' % passport.errorcode
 	print 'Device set to %s transfers' % passport.ISO_SPEED[passport.speed]
 	print 'Device supports %s Byte transfers' % passport.ISO_FRAMESIZE[passport.framesize]
@@ -1284,6 +1295,10 @@ if not FILES and BAC:
 			print 'Received rnd_ifd: ', recifd
 			if not bruteforce or iterations == 0:
 				os._exit(True)
+                        if bruteforcereset:
+                                while not passport.hsselect('08', cardtype):
+                                        print 'Waiting for passport... (%s)' % passport.errorcode
+                                passport.iso_7816_select_file(passport.AID_MRTD,passport.ISO_7816_SELECT_BY_NAME,'0C')
 		else:
 			if DEBUG or TEST:
 				print '(verified)'
@@ -1433,7 +1448,7 @@ if Jmrtd:
 		filespath=tempfiles
 		print
 		raw_input('Please replace passport with a JMRTD or vonJeek emulator card and press ENTER when ready...')
-	if not passport.hsselect('08') or not passport.iso_7816_select_file(passport.AID_MRTD,passport.ISO_7816_SELECT_BY_NAME,'0C'):
+	if (not passport.hsselect('08', 'A') and not passport.hsselect('08', 'B')) or not passport.iso_7816_select_file(passport.AID_MRTD,passport.ISO_7816_SELECT_BY_NAME,'0C'):
 		print "Couldn't select JMRTD!"
 		os._exit(True)
 	print "Initialising JMRTD or vonJeek..."

@@ -115,13 +115,13 @@ class rfidiot:
 					if string.find(self.readername,'SDI010') == 0:
 						self.readersubtype= self.READER_SCM
 					else:
-						if string.find(self.readername,'ACS ACR 38U') == 0 or string.find(self.readername,'ACS ACR38U') == 0:
-							self.readersubtype= self.READER_ACS
-							self.pcsc_protocol= smartcard.scard.SCARD_PROTOCOL_T0
-							self.hcard = None
-						elif string.find(self.readername,'ACS ACR122U PICC') == 0:
+						if string.find(self.readername,'ACS ACR122U PICC') == 0:
 							self.readersubtype= self.READER_ACS
 							self.pcsc_protocol= smartcard.scard.SCARD_PROTOCOL_T1
+							self.hcard = None
+						elif string.find(self.readername,'ACS') == 0:
+							self.readersubtype= self.READER_ACS
+							self.pcsc_protocol= smartcard.scard.SCARD_PROTOCOL_T0
 							self.hcard = None
 						else:
 							# default to Omnikey for now
@@ -206,7 +206,7 @@ class rfidiot:
 	#
 	# MRPmrzu: Machine Readable Passport - Machine Readable Zone - Upper
 	# MRPmrzl Machine Readable Passport - Machine Readable Zone - Lower
-	VERSION= '1.0e'
+	VERSION= '1.0k'
 	# Reader types
 	READER_ACG= 0x01
 	READER_FROSCH= 0x02
@@ -659,7 +659,7 @@ class rfidiot:
 		   '01':'ISO 14443 A, part 1',\
 		   '02':'ISO 14443 A, part 2',\
 		   '03':'ISO 14443 A, part 3',\
-		   '04':'RFU',\
+		   '04':'Low frequency contactless cards',\
 		   '05':'ISO 14443 B, part 1',\
 		   '06':'ISO 14443 B, part 2',\
 		   '07':'ISO 14443 B, part 3',\
@@ -672,6 +672,7 @@ class rfidiot:
 		   '0E':'Contact (7816-10) Extended I2 C',\
 		   '0F':'Contact (7816-10) 2WBP',\
 		   '10':'Contact (7816-10) 3WBP',\
+		   '11':'FeliCa',\
 		   'FF':'RFU'}
 	# PCSC card names
 	PCSC_NAME= { '0000':'No name given',\
@@ -711,7 +712,31 @@ class rfidiot:
 		     '0023':'I.CODE EPC',\
 		     '0024':'LRI12',\
 		     '0025':'LRI128',\
-		     '0026':'Mifare Mini'}
+		     '0026':'Mifare Mini',\
+		     '0027':'my-d move (SLE 66R01P)',\
+		     '0028':'my-d NFC (SLE 66RxxP)',\
+		     '0029':'my-d proximity 2 (SLE 66RxxS)',\
+		     '002A':'my-d proximity enhanced (SLE 55RxxE)',\
+		     '002B':'my-d light (SRF 55V01P)',\
+		     '002C':'PJM Stack Tag (SRF 66V10ST)',\
+		     '002D':'PJM Item Tag (SRF 66V10IT)',\
+		     '002E':'PJM Light (SRF 66V01ST)',\
+		     '002F':'Jewel Tag',\
+		     '0030':'Topaz NFC Tag',\
+		     '0031':'AT88SC0104CRF',\
+		     '0032':'AT88SC0404CRF',\
+		     '0033':'AT88RF01C',\
+		     '0034':'AT88RF04C',\
+		     '0035':'i-Code SL2',\
+		     '0036':'MIFARE Plus SL1_2K',\
+		     '0037':'MIFARE Plus SL1_4K',\
+		     '0038':'MIFARE Plus SL2_2K',\
+		     '0039':'MIFARE Plus SL2_4K',\
+		     '003A':'MIFARE Ultralight C',\
+		     '003B':'FeliCa',\
+		     '003C':'Melexis Sensor Tag (MLX90129)',\
+		     '003D':'MIFARE Ultralight EV1',\
+		     }
 	# ACS Constants
 	ACS_TAG_FOUND= 'D54B'
 	ACS_DATA_OK= 'D541'
@@ -738,14 +763,18 @@ class rfidiot:
 			'98':ACS_TAG_GEMPLUS_MPCOS,
 			}
 	# HID constants
+	HID_PROX_H10301_H= '3B0500'
 	HID_PROX_H10301= '3B0601'
 	HID_PROX_H10302= '3B0702'
+	HID_PROX_H10302_H= '3B0600'
 	HID_PROX_H10304= '3B0704'
 	HID_PROX_H10320= '3B0514'
 	HID_PROX_CORP1K= '3B0764'
 	HID_PROX_TYPES=	{
+			HID_PROX_H10301_H:'HID Prox H10301 - 26 bit (FAC + CN)',
 			HID_PROX_H10301:'HID Prox H10301 - 26 bit (FAC + CN)',
 			HID_PROX_H10302:'HID Prox H10302 - 37 bit (CN)',
+			HID_PROX_H10302_H:'HID Prox H10302 - 37 bit (CN)',
 			HID_PROX_H10304:'HID Prox H10304 - 37 bit (FAC + CN)',
 			HID_PROX_H10320:'HID Prox H10320 - 32 bit clock/data card',
 			HID_PROX_CORP1K:'HID Prox Corp 1000 - 35 bit (CIC + CN)',
@@ -947,7 +976,7 @@ class rfidiot:
 				# do nothing
 				time.sleep(0.1)
 		return True
-	def select(self):
+	def select(self, cardtype='A'):
 		if self.DEBUG:
 			print 'in select'
 		self.uid= ''
@@ -1020,17 +1049,56 @@ class rfidiot:
 			try:
 				if self.DEBUG:
 					print 'selecting card using LIBNFC'
-				result = self.nfc.selectISO14443A()
-				if result:
-					self.atr = result.atr
-					self.uid = result.uid
-					if self.DEBUG:
-						print 'ATR: ' + self.atr
-						print 'UID: ' + self.uid
-					return True
+				if cardtype == 'A':
+					result = self.nfc.selectISO14443A()
+					if result:
+						self.atr = result.atr
+						self.uid = result.uid
+						if self.DEBUG:
+							print 'UID: ' + self.uid
+						return True
+					else:
+						if self.DEBUG:
+							print 'Error selecting card'
+						return False
+				elif cardtype == 'B':
+					result = self.nfc.selectISO14443B()
+					if result:
+						self.pupi = result.pupi
+						self.atr = result.atr
+						self.uid = result.uid
+						self.appdata = result.appdata
+						self.protocol = result.protocol
+						self.cid = result.cid
+						if self.DEBUG:
+							print 'PUPI: ' + self.pupi
+							print 'ATR: ' + self.atr
+							print 'UID: ' + self.uid
+							print 'APPDATA: ' + self.appdata
+							print 'PROTOCOL: ' + self.protocol
+							print 'CID: ' + self.cid
+						return True
+					else:
+						if self.DEBUG:
+							print 'Error selecting card'
+						return False
+				elif cardtype == 'JEWEL':
+					result = self.nfc.selectJEWEL()
+					if result:
+						self.btsensres = result.btSensRes
+						self.btid = result.btId
+						self.uid = result.uid
+						if self.DEBUG:
+							print 'SENSRES: ' + self.btsensres
+							print 'ID: ' + self.btid
+						return True
+					else:
+						if self.DEBUG:
+							print 'Error selecting card'
+						return False
 				else:
 					if self.DEBUG:
-						print 'Error selecting card'
+						print 'Error: Unknown card type specified: %s' % cardtype
 					return False
 			except ValueError:
 				self.errorcode = 'Error selecting card using LIBNFC' + e
@@ -1071,10 +1139,10 @@ class rfidiot:
 			self.errorcode= ret
 			return False
 		return True
-	def hsselect(self,speed):
+	def hsselect(self,speed,cardtype='A'):
 		if self.readertype == self.READER_PCSC or self.readertype == self.READER_LIBNFC or self.READER_ANDROID:
 			# low level takes care of this, so normal select only
-			if self.select():
+			if self.select(cardtype):
 				#fixme - find true speed/framesize
 				self.speed= '04'
 				self.framesize= '08'
@@ -1863,19 +1931,17 @@ class rfidiot:
 		return self.ToBinaryString(self.ToBinary(data))
 	def crcccitt(self,data):
 		crcvalue= 0x0000
-		for x in range(len(data)):
-			crcvalue= self.crc(crcvalue,data[x],MASK_CCITT)
-		return crcvalue
+		return self.crc(crcvalue, data, MASK_CCITT)
 	def crc(self, crc, data, mask=MASK_CRC16):
 		for char in data:
 			c = ord(char)
 			c = c << 8
-		for j in xrange(8):
-			if (crc ^ c) & 0x8000:
-				crc = (crc << 1) ^ mask
-			else:
-				crc = crc << 1
-			c = c << 1
+			for j in xrange(8):
+				if (crc ^ c) & 0x8000:
+					crc = (crc << 1) ^ mask
+				else:
+					crc = crc << 1
+				c = c << 1
 		return crc & 0xffff
 	def crc16(self,data):
 		crcValue=0x0000

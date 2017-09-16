@@ -236,9 +236,36 @@ class ISO14443A(object):
 			self.atr = "".join(["%02X" % x for x in ti.abtAts[:ti.uiAtsLen]])
 		else:
 			self.atr = ""
+		self.atqa = "".join(["%02X" % x for x in ti.abtAtqa])
+		self.sak = "%02X" % ti.btSak
 	
 	def __str__(self):
-		rv = "ISO14443A(uid='%s', atr='%s')" % (self.uid, self.atr)
+		rv = "ISO14443A(uid='%s', atr='%s', atqa='%s', sak='%s')" % (self.uid, self.atr, self.atqa, self.sak)
+		return rv
+
+class ISO14443B(object):
+	def __init__(self, ti):
+		self.pupi = "".join(["%02X" % x for x in ti.abtPupi[:4]])
+		self.uid = self.pupi # for sake of compatibility with apps written for typeA
+		self.appdata= "".join(["%02X" % x for x in ti.abtApplicationData[:4]])
+		self.protocol= "".join(["%02X" % x for x in ti.abtProtocolInfo[:3]])
+		self.cid= "%02x" % ti.ui8CardIdentifier
+		self.atr = ""        # idem
+	def __str__(self):
+		rv = "ISO14443B(pupi='%s')" % (self.pupi)
+		return rv
+
+class JEWEL(object):
+	def __init__(self, ti):
+		self.btSensRes = "".join(["%02X" % x for x in ti.btSensRes[:2]])
+		self.btId = "".join(["%02X" % x for x in ti.btId[:4]])
+		self.uid = self.btId
+		self.atr = ""        # idem
+		self.atqa = self.btSensRes
+		self.sak = ""
+	
+	def __str__(self):
+		rv = "JEWEL(btSensRes='%s', btId='%s')" % (self.btSensRes, self.btId)
 		return rv
 
 class NFC(object):
@@ -400,6 +427,34 @@ class NFC(object):
 			return ISO14443A(target[0].nti.nai)
 		return None
 
+	def selectISO14443B(self):
+		"""Detect and initialise an ISO14443B card, returns an ISO14443B() object."""
+		if rfidiotglobals.Debug:
+			self.log.debug("Polling for ISO14443B cards")
+		self.powerOff()
+		self.powerOn()
+		nm= NFC_MODULATION()
+		target= (NFC_TARGET * MAX_TARGET_COUNT) ()
+		nm.nmt = NMT_ISO14443B
+		nm.nbr = NBR_106
+		if self.libnfc.nfc_initiator_list_passive_targets(self.device, nm, ctypes.byref(target), MAX_TARGET_COUNT):
+			return ISO14443B(target[0].nti.nbi)
+		return None
+
+	def selectJEWEL(self):
+		"""Detect and initialise a JEWEL card, returns a JEWEL() object."""
+		if rfidiotglobals.Debug:
+			self.log.debug("Polling for JEWEL cards")
+		self.powerOff()
+		self.powerOn()
+		nm= NFC_MODULATION()
+		target= (NFC_TARGET * MAX_TARGET_COUNT) ()
+		nm.nmt = NMT_JEWEL
+		nm.nbr = NBR_106
+		if self.libnfc.nfc_initiator_list_passive_targets(self.device, nm, ctypes.byref(target), MAX_TARGET_COUNT):
+			return JEWEL(target[0].nti.nji)
+		return None
+
 	# set Mifare specific parameters
 	def configMifare(self):
 		self.libnfc.nfc_device_set_property_bool(self.device, NP_AUTO_ISO14443_4, False)
@@ -439,6 +494,8 @@ if __name__ == "__main__":
 	c = n.readISO14443A()
 	print 'UID: ' + c.uid
 	print 'ATR: ' + c.atr
+	print 'ATQA: ' + c.atqa
+	print 'SAK: ' + c.sak
 
 	cont = True
 	while cont:
